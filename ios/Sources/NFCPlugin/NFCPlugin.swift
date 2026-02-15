@@ -27,9 +27,18 @@ public class NFCPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func startScan(_ call: CAPPluginCall) {
         print("startScan called")
+        if let preferredMode = call.getString("mode") {
+            reader.setPreferredReaderMode(preferredMode)
+        } else if call.getBool("forceFull") == true {
+            reader.setPreferredReaderMode("full")
+        } else if call.getBool("forceCompat") == true {
+            reader.setPreferredReaderMode("compat")
+        } else if call.getBool("forceNDEF") == true {
+            reader.setPreferredReaderMode("ndef")
+        }
         reader.onNDEFMessageReceived = { messages, tagInfo in
             var ndefMessages = [[String: Any]]()
-            
+
             if messages.isEmpty {
                 // If no NDEF messages but we have tag info, create a fallback record with the UID
                 if let tagInfo = tagInfo, let uid = tagInfo["uid"] as? String {
@@ -48,7 +57,7 @@ public class NFCPlugin: CAPPlugin, CAPBridgedPlugin {
                     for record in message.records {
                         let recordType = String(data: record.type, encoding: .utf8) ?? ""
                         let payloadData = record.payload.base64EncodedString()
-                        
+
                         records.append([
                             "type": recordType,
                             "payload": payloadData
@@ -59,12 +68,12 @@ public class NFCPlugin: CAPPlugin, CAPBridgedPlugin {
                     ])
                 }
             }
-            
+
             var response: [String: Any] = ["messages": ndefMessages]
             if let tagInfo = tagInfo {
                 response["tagInfo"] = tagInfo
             }
-            
+
             self.notifyListeners("nfcTag", data: response)
         }
 
@@ -96,26 +105,43 @@ public class NFCPlugin: CAPPlugin, CAPBridgedPlugin {
         var ndefRecords = [NFCNDEFPayload]()
         for recordData in recordsData {
             guard let type = recordData["type"] as? String,
-                let payload = recordData["payload"] as? [NSNumber],
-                let typeData = type.data(using: .utf8)
+                let payload = recordData["payload"] as? [NSNumber]
             else {
                 print("Skipping record due to missing or invalid record")
                 continue
             }
-            
+
             guard let payloadArray = payload as [NSNumber]? else {
                 print("Skipping record due to missing or invalid 'payload' (expected array of numbers)")
                 continue
             }
-            
+
             var payloadBytes = [UInt8]()
             for number in payloadArray {
                 payloadBytes.append(number.uint8Value)
             }
             let payloadData = Data(payloadBytes)
 
+            let format: NFCTypeNameFormat
+            let typeEncoding: String.Encoding
+            if type == "T" || type == "U" {
+                format = .nfcWellKnown
+                typeEncoding = .utf8
+            } else if type.contains("/") {
+                format = .media
+                typeEncoding = .ascii
+            } else {
+                format = .nfcExternal
+                typeEncoding = .utf8
+            }
+
+            guard let typeData = type.data(using: typeEncoding) else {
+                print("Skipping record due to unsupported type encoding")
+                continue
+            }
+
             let ndefRecord = NFCNDEFPayload(
-                format: .nfcWellKnown,
+                format: format,
                 type: typeData,
                 identifier: Data(),
                 payload: payloadData

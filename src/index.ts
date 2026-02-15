@@ -5,19 +5,31 @@ import type {
   NDEFWriteOptions,
   NFCPlugin,
   NFCPluginBasic,
+  StartScanOptions,
   PayloadType,
   TagResultListenerFunc,
   NFCError,
   NDEFMessages,
-} from './definitions';
+} from './definitions.js';
 
 const NFCPlug = registerPlugin<NFCPluginBasic>('NFC', {
-  web: () => import('./web').then((m) => new m.NFCWeb()),
+  // Explicit .js extension required under node16/nodenext module resolution for emitted ES modules.
+  web: () => import('./web.js').then((m) => new m.NFCWeb()),
 });
-export * from './definitions';
+export * from './definitions.js';
 export const NFC: NFCPlugin = {
   isSupported: NFCPlug.isSupported.bind(NFCPlug),
-  startScan: NFCPlug.startScan.bind(NFCPlug),
+  startScan: (options?: StartScanOptions) => {
+    const normalizedOptions: Record<string, unknown> = {};
+    if (options) {
+      for (const [key, value] of Object.entries(options)) {
+        if (value !== undefined && value !== null) {
+          normalizedOptions[key] = value;
+        }
+      }
+    }
+    return NFCPlug.startScan(normalizedOptions);
+  },
   cancelScan:
     NFCPlug.cancelScan?.bind(NFCPlug) ??
     (async () => {
@@ -28,12 +40,12 @@ export const NFC: NFCPlugin = {
     NFC.wrapperListeners.push(func);
     // Return unsubscribe function
     return () => {
-      NFC.wrapperListeners = NFC.wrapperListeners.filter((l) => l !== func);
+      NFC.wrapperListeners = NFC.wrapperListeners.filter((l: TagResultListenerFunc) => l !== func);
     };
   },
   onWrite: (func: () => void) => {
     let handle: any;
-    NFCPlug.addListener(`nfcWriteSuccess`, func).then((h) => (handle = h));
+    NFCPlug.addListener(`nfcWriteSuccess`, func).then((h: any) => (handle = h));
     return () => {
       try {
         handle?.remove?.();
@@ -44,7 +56,7 @@ export const NFC: NFCPlugin = {
   },
   onError: (errorFn: (error: NFCError) => void) => {
     let handle: any;
-    NFCPlug.addListener(`nfcError`, errorFn).then((h) => (handle = h));
+    NFCPlug.addListener(`nfcError`, errorFn).then((h: any) => (handle = h));
     return () => {
       try {
         handle?.remove?.();
@@ -75,19 +87,26 @@ export const NFC: NFCPlugin = {
     const recordsArray = options?.records ?? [];
     if (recordsArray.length === 0) throw new Error('At least one NDEF record is required');
 
+    const isRawMode = options?.rawMode === true;
+
     const ndefMessage: NDEFWriteOptions<number[]> = {
-      records: recordsArray.map((record) => {
+      records: recordsArray.map((record: any) => {
         let payload: number[] | null = null;
 
         if (typeof record.payload === 'string') {
-          // Apply spec-compliant formatting only for Well Known Text (T) & URI (U) types.
-          if (record.type === 'T') {
-            payload = buildTextPayload(record.payload);
-          } else if (record.type === 'U') {
-            payload = buildUriPayload(record.payload);
-          } else {
-            // Generic string: raw UTF-8 bytes (no extra framing)
+          if (isRawMode) {
+            // Raw mode: write string payloads as UTF-8 bytes without any framing
             payload = Array.from(new TextEncoder().encode(record.payload));
+          } else {
+            // Apply spec-compliant formatting only for Well Known Text (T) & URI (U) types.
+            if (record.type === 'T') {
+              payload = buildTextPayload(record.payload);
+            } else if (record.type === 'U') {
+              payload = buildUriPayload(record.payload);
+            } else {
+              // Generic string: raw UTF-8 bytes (no extra framing)
+              payload = Array.from(new TextEncoder().encode(record.payload));
+            }
           }
         } else if (Array.isArray(record.payload)) {
           // Assume already raw bytes; do NOT modify
@@ -213,8 +232,8 @@ const toStringPayload = (recordType: string, bytes: Uint8Array): string => {
 
 const mapPayloadTo = <T extends DecodeSpecifier>(type: T, data: NDEFMessages): decodedType<T> => {
   return {
-    messages: data.messages.map((message) => ({
-      records: message.records.map((record) => {
+    messages: data.messages.map((message: any) => ({
+      records: message.records.map((record: any) => {
         const bytes = decodeBase64ToBytes(record.payload as unknown as string);
         let payload: any;
         switch (type) {
@@ -240,7 +259,7 @@ const mapPayloadTo = <T extends DecodeSpecifier>(type: T, data: NDEFMessages): d
   } as decodedType<T>;
 };
 
-NFCPlug.addListener(`nfcTag`, (data) => {
+NFCPlug.addListener(`nfcTag`, (data: any) => {
   const wrappedData: NDEFMessagesTransformable = {
     base64() {
       return mapPayloadTo('b64', data);

@@ -31,7 +31,7 @@ import CoreNFC
     }
 
     public func readerSessionDidBecomeActive(_ session: NFCNDEFReaderSession) {
-        
+
     }
 
     public func readerSession(_ session: NFCNDEFReaderSession, didDetect tags: [NFCNDEFTag]) {
@@ -53,7 +53,7 @@ import CoreNFC
                 return
             }
 
-            tag.queryNDEFStatus { (ndefStatus, capacity, error) in
+            tag.queryNDEFStatus { (ndefStatus, _, error) in
                 if let error = error {
                     session.invalidate(errorMessage: "Unable to query the NDEF status of tag.")
                     self.onError?(error)

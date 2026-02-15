@@ -2,8 +2,16 @@
   "name": "@exxili/capacitor-nfc",
   "version": "0.0.12",
   "description": "A Capacitor plugin for reading and writing NFC NDEFtags.",
+  "type": "module",
   "main": "dist/plugin.cjs.js",
   "module": "dist/esm/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/plugin.cjs.js",
+      "types": "./dist/esm/index.d.ts"
+    }
+  },
   "types": "dist/esm/index.d.ts",
   "unpkg": "dist/plugin.js",
   "files": [
@@ -38,7 +46,7 @@
     "fmt": "npm run eslint -- --fix && npm run prettier -- --write && npm run swiftlint -- --fix --format",
     "eslint": "eslint . --ext ts",
     "prettier": "prettier \"**/*.{css,html,ts,js,java}\" --plugin=prettier-plugin-java",
-    "swiftlint": "node-swiftlint",
+    "swiftlint": "node-swiftlint lint ios/Sources/NFCPlugin --config .swiftlint.yml",
     "docgen": "docgen --api NFCPlugin --output-readme README.md --output-json dist/docs.json",
     "build": "npm run clean && tsc && rollup -c rollup.config.js && rimraf *.tgz && npm pack",
     "clean": "rimraf ./dist",

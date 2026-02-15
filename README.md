@@ -63,6 +63,25 @@ In Xcode:
 5. Click the `+ Capability` button.
 6. Add **Near Field Communication Tag Reading**.
 
+> **Advanced tag formats:** If you need ISO 7816, ISO 15693, or FeliCa access (to read raw UIDs, system codes, etc.), Apple requires additional entitlements in your provisioning profile and `Info.plist`. The plugin will fall back automatically when they are absent, but to unlock the full feature set add the relevant keys:
+>
+> ```xml
+> <key>com.apple.developer.nfc.readersession.felica.systemcodes</key>
+> <array>
+>   <string>12FC</string>
+>   <string>0000</string>
+> </array>
+> <key>com.apple.developer.nfc.readersession.iso7816.select-identifiers</key>
+> <array>
+>   <string>D2760000850100</string>
+>   <string>D2760000850101</string>
+>   <string>D2760001180101</string>
+>   <string>00000000000000</string>
+> </array>
+> ```
+>
+> Replace the sample identifiers with the values required for your tags. Consult Apple's CoreNFC documentation for the complete list of entitlement keys.
+
 ### 2. Add Usage Description
 
 Add the `NFCReaderUsageDescription` key to your `Info.plist` file to explain why your app needs access to NFC.
@@ -116,14 +135,17 @@ NFC.onRead((data: NDEFMessagesTransformable) => {
   console.log('First record raw bytes length:', asUint8.messages[0]?.records[0]?.payload.length);
 
   // Access tag information (UID, tech types, etc.)
-  if (asString.tagInfo) {
-    console.log('Tag UID:', asString.tagInfo.uid);
-    console.log('Tag technologies:', asString.tagInfo.techTypes);
-    console.log('Tag type:', asString.tagInfo.type);
-    if (asString.tagInfo.maxSize) {
-      console.log('Max NDEF size:', asString.tagInfo.maxSize);
+  const info = asString.tagInfo;
+  if (info?.fallback) {
+    console.log('Reader fallback mode:', info.fallbackMode, 'Reason:', info.reason);
+  } else if (info) {
+    console.log('Tag UID:', info.uid);
+    console.log('Tag technologies:', info.techTypes);
+    console.log('Tag type:', info.type);
+    if (info.maxSize) {
+      console.log('Max NDEF size:', info.maxSize);
     }
-    console.log('Is writable:', asString.tagInfo.isWritable);
+    console.log('Is writable:', info.isWritable);
   }
 });
 
@@ -153,6 +175,21 @@ const message: NDEFWriteOptions = {
     {
       type: 'T',
       payload: new Uint8Array([0x01, 0x65, 0x48, 0x69]), // Raw bytes preserved (DO NOT re-format)
+    },
+  ],
+};
+
+// For complete control over binary content, use raw mode:
+const rawMessage: NDEFWriteOptions = {
+  rawMode: true, // Bypasses automatic Text/URI formatting
+  records: [
+    {
+      type: 'T',
+      payload: 'Hello, NFC!', // Written as UTF-8 bytes without Text record prefix
+    },
+    {
+      type: 'custom',
+      payload: new Uint8Array([0x01, 0x02, 0x03, 0x04]), // Exact bytes written to tag
     },
   ],
 };
@@ -191,10 +228,21 @@ Returns if NFC is supported on the scanning device.
 
 Starts the NFC scanning session on **_iOS only_**. Android devices are always in reading mode, so setting up the `nfcTag` listener is sufficient to handle tag reads on Android.
 
+The iOS implementation now adapts automatically if the extended CoreNFC entitlements (ISO 7816, ISO 15693, FeliCa) are missing. The plugin first attempts the advanced tag reader so you can access UID/tech info. When iOS reports `Missing required entitlement`, the plugin downgrades to a compatibility mode (ISO 14443 only) and, if necessary, to the classic NDEF reader. A synthetic `nfcTag` event is emitted with `tagInfo.fallback`, `tagInfo.fallbackMode`, and `tagInfo.reason` so your UI can react immediately.
+
+You can override the mode explicitly:
+
+- `mode: 'auto'` (default) – advanced reader with automatic downgrade and caching.
+- `mode: 'full'` – force a fresh attempt at the advanced reader, resetting cached fallback state.
+- `mode: 'compat'` – skip the advanced probe and jump straight to the ISO 14443 compatibility reader.
+- `mode: 'ndef'` – bypass tag sessions entirely and revert to the legacy NDEF-only reader.
+
+Legacy booleans `forceFull`, `forceCompat`, and `forceNDEF` map to the options above for backwards compatibility.
+
 **Returns**: `Promise<void>`
 
 ```typescript
-NFC.startScan()
+NFC.startScan({ mode: 'auto' })
   .then(() => {
     // Scanning started
   })
@@ -232,6 +280,8 @@ Automatic formatting rules (to aid interoperability):
 - URI (`type: 'U'` + string payload): encoded as `[0x00][UTF-8 URI bytes]` (prefix compression not yet applied).
 - Any other `type` + string payload: UTF-8 bytes only (no extra framing).
 - `Uint8Array` or `number[]` payloads are treated as raw bytes and written verbatim (never altered).
+
+**Raw Mode**: Set `rawMode: true` to bypass automatic Well Known Type formatting entirely. All string payloads will be written as UTF-8 bytes without Text ('T') or URI ('U') prefixes, giving you complete control over the binary content.
 
 If you need full manual control of a Text or URI record, supply raw bytes (number[] / Uint8Array) and the plugin will not modify them.
 
@@ -328,6 +378,11 @@ Options for writing an NDEF message.
 ```typescript
 interface NDEFWriteOptions<T extends string | number[] | Uint8Array = string> {
   records: NDEFRecord<T>[];
+  /**
+   * When true, bypasses automatic Well Known Type formatting (Text 'T' and URI 'U' prefixes).
+   * All payloads are written as raw bytes without additional framing.
+   */
+  rawMode?: boolean;
 }
 ```
 
@@ -369,12 +424,12 @@ interface TagInfo {
   /**
    * The unique identifier of the tag (UID) as a hex string
    */
-  uid: string;
+  uid?: string;
 
   /**
    * The NFC tag technology types supported
    */
-  techTypes: string[];
+  techTypes?: string[];
 
   /**
    * The maximum size of NDEF message that can be written to this tag (if applicable)
@@ -390,6 +445,34 @@ interface TagInfo {
    * The tag type (e.g., "ISO14443-4", "MifareClassic", etc.)
    */
   type?: string;
+
+  /**
+   * Present when the plugin downgraded capabilities for compatibility.
+   */
+  fallback?: boolean;
+
+  /**
+   * Which fallback strategy is in use (`compat` or `ndef`).
+   */
+  fallbackMode?: 'compat' | 'ndef';
+
+  /**
+   * Reason metadata (e.g., `missing-entitlement`).
+   */
+  reason?: string;
+}
+```
+
+#### `StartScanOptions`
+
+Optional tweaks for the iOS reader behavior.
+
+```typescript
+interface StartScanOptions {
+  mode?: 'auto' | 'full' | 'compat' | 'ndef';
+  forceFull?: boolean;
+  forceCompat?: boolean;
+  forceNDEF?: boolean;
 }
 ```
 

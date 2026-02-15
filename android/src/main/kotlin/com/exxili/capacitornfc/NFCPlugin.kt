@@ -186,20 +186,49 @@ class NFCPlugin : Plugin() {
                         return
                     }
 
-                    val typeBytes = type.toByteArray(Charsets.UTF_8)
                     val payloadBytes = ByteArray(payload.length())
                     for(i in 0 until payload.length()) {
                         payloadBytes[i] = payload.getInt(i).toByte()
                     }
 
-                    ndefRecords.add(
-                        NdefRecord(
+                    val (tnf, typeBytes) = when {
+                        type == "T" || type == "U" -> Pair(
                             NdefRecord.TNF_WELL_KNOWN,
+                            type.toByteArray(Charsets.UTF_8)
+                        )
+                        type.contains("/") -> Pair(
+                            NdefRecord.TNF_MIME_MEDIA,
+                            type.toByteArray(Charsets.US_ASCII)
+                        )
+                        else -> Pair(
+                            NdefRecord.TNF_EXTERNAL_TYPE,
+                            type.toByteArray(Charsets.UTF_8)
+                        )
+                    }
+
+                    val record = if (tnf == NdefRecord.TNF_MIME_MEDIA) {
+                        try {
+                            NdefRecord.createMime(type, payloadBytes)
+                        } catch (e: IllegalArgumentException) {
+                            notifyListeners(
+                                "nfcError",
+                                JSObject().put(
+                                    "error",
+                                    "Invalid MIME type for record"
+                                )
+                            )
+                            return
+                        }
+                    } else {
+                        NdefRecord(
+                            tnf,
                             typeBytes,
                             ByteArray(0),
                             payloadBytes
                         )
-                    )
+                    }
+
+                    ndefRecords.add(record)
                 }
 
                 val ndefMessage = NdefMessage(ndefRecords.toTypedArray())

@@ -1,0 +1,28 @@
+# Custom SwiftLint configuration for the plugin sources
+# Exclude dependency and build directories to avoid third-party violations
+excluded:
+  - node_modules
+  - .build
+  - dist
+  - android
+
+# Limit linting to our Swift sources
+included:
+  - ios/Sources/NFCPlugin
+
+# Allow slightly longer lines for debug logging
+line_length:
+  warning: 160
+  error: 200
+
+# Opt-in / opt-out adjustments
+opt_in_rules:
+  - unused_import
+
+disabled_rules:
+  - force_cast # Acceptable in limited bridging contexts
+  - cyclomatic_complexity # Keep simple for now; plugin code is small
+
+# Analyzer rules (run with `swiftlint analyze`) kept minimal
+analyzer_rules:
+  - unused_import

@@ -3,13 +3,34 @@ import type { PluginListenerHandle } from '@capacitor/core';
 // Payload from a new NFC scan is a base64 encoded string
 export type PayloadType = string | number[] | Uint8Array;
 
+export interface StartScanOptions {
+  /**
+   * Select the native reader strategy.
+   * - `auto` (default): attempt advanced tag session first, downgrade automatically on entitlement failures.
+   * - `full`: force the advanced tag session (resets any cached fallback state).
+   * - `compat`: force the compatibility tag session (ISO14443-only, avoids advanced entitlements).
+   * - `ndef`: skip tag session entirely and use the legacy NDEF reader.
+   */
+  mode?: 'auto' | 'full' | 'compat' | 'ndef';
+  /**
+   * Backwards-compatible hints for older app code. When true, they map to `mode` selections above.
+   */
+  forceFull?: boolean;
+  forceCompat?: boolean;
+  forceNDEF?: boolean;
+}
+
 export interface NFCPluginBasic {
   /**
    * Checks if NFC is supported on the device. Returns true on all iOS devices, and checks for support on Android.
    */
   isSupported(): Promise<{ supported: boolean }>;
 
-  startScan(): Promise<void>;
+  /**
+   * Begins listening for NFC tags.
+   * @param options Optional tuning parameters for native reader behavior.
+   */
+  startScan(options?: StartScanOptions): Promise<void>;
 
   /**
    * Cancels an ongoing scan session (iOS only currently; no-op / rejection on Android).
@@ -77,12 +98,12 @@ export interface TagInfo {
   /**
    * The unique identifier of the tag (UID) as a hex string
    */
-  uid: string;
+  uid?: string;
 
   /**
    * The NFC tag technology types supported
    */
-  techTypes: string[];
+  techTypes?: string[];
 
   /**
    * The maximum size of NDEF message that can be written to this tag (if applicable)
@@ -98,6 +119,21 @@ export interface TagInfo {
    * The tag type (e.g., "ISO14443-4", "MifareClassic", etc.)
    */
   type?: string;
+
+  /**
+   * Truthy when the plugin downgraded reader capabilities for compatibility.
+   */
+  fallback?: boolean;
+
+  /**
+   * Indicates the active fallback mode (`compat` or `ndef`).
+   */
+  fallbackMode?: 'compat' | 'ndef';
+
+  /**
+   * Optional reason string when fallback was applied (e.g., `missing-entitlement`).
+   */
+  reason?: string;
 }
 
 export interface NDEFRecord<T extends PayloadType = string> {
@@ -121,6 +157,11 @@ export interface NFCError {
 
 export interface NDEFWriteOptions<T extends PayloadType = Uint8Array> {
   records: NDEFRecord<T>[];
+  /**
+   * When true, bypasses automatic Well Known Type formatting (Text 'T' and URI 'U' prefixes).
+   * All payloads are written as raw bytes without additional framing.
+   */
+  rawMode?: boolean;
 }
 
 export type NDEFMessagesTransformable = {

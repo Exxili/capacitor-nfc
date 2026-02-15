@@ -4,9 +4,9 @@
     "declaration": true,
     "esModuleInterop": true,
     "inlineSources": true,
-    "lib": ["dom", "es2017"],
-    "module": "esnext",
-    "moduleResolution": "bundler",
+    "lib": ["dom", "dom.iterable", "es2017"],
+    "module": "Node16",
+    "moduleResolution": "node16",
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -14,7 +14,9 @@
     "pretty": true,
     "sourceMap": true,
     "strict": true,
-    "target": "es2017"
+    "target": "es2017",
+    // Avoid conflicts between DOM and @types/node AbortSignal declarations
+    "skipLibCheck": true
   },
-  "files": ["src/index.ts"]
+  "include": ["src/**/*.ts"]
 }
