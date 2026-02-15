@@ -3,7 +3,6 @@ package com.exxili.capacitornfc
 import android.app.ActivityOptions
 import android.app.PendingIntent
 import android.content.Intent
-import android.content.IntentFilter
 import android.nfc.NdefMessage
 import android.nfc.NdefRecord
 import android.nfc.NfcAdapter
@@ -25,8 +24,8 @@ import android.nfc.tech.NfcF
 import android.nfc.tech.NfcV
 import android.os.Build
 import android.os.Bundle
+import android.os.Parcelable
 import android.util.Log
-import androidx.annotation.RequiresApi
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -57,7 +56,6 @@ class NFCPlugin : Plugin() {
         NfcV::class.java.name
     ))
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     public override fun handleOnNewIntent(intent: Intent?) {
         super.handleOnNewIntent(intent)
 
@@ -93,35 +91,54 @@ class NFCPlugin : Plugin() {
 
     @PluginMethod
     fun startScan(call: PluginCall) {
-        print("startScan called")
-        call.reject("Android NFC scanning does not require 'startScan' method.")
+        val adapter = getDefaultAdapter(this.activity)
+        if (adapter == null) {
+            call.reject("NFC is not supported on this device")
+            return
+        }
+        enableForegroundDispatchSafely(adapter)
+        Log.d("NFC", "startScan called on Android (foreground dispatch enabled)")
+        call.resolve()
     }
 
     @PluginMethod
     fun writeNDEF(call: PluginCall) {
-        print("writeNDEF called")
-
+        val adapter = getDefaultAdapter(this.activity)
+        if (adapter == null) {
+            call.reject("NFC is not supported on this device")
+            return
+        }
         writeMode = true
         recordsBuffer = call.getArray("records")
-
+        enableForegroundDispatchSafely(adapter)
+        Log.d("NFC", "writeNDEF armed - waiting for tag tap")
         call.resolve()
     }
 
     override fun handleOnPause() {
         super.handleOnPause()
-        getDefaultAdapter(this.activity)?.disableForegroundDispatch(this.activity)
+        getDefaultAdapter(this.activity)?.let { adapter ->
+            try {
+                adapter.disableForegroundDispatch(this.activity)
+            } catch (e: IllegalStateException) {
+                Log.w("NFC", "disableForegroundDispatch called outside resumed state: ${e.message}")
+            }
+        }
     }
 
     override fun handleOnResume() {
         super.handleOnResume()
-        if(getDefaultAdapter(this.activity) == null) return;
+        val adapter = getDefaultAdapter(this.activity) ?: return
+        enableForegroundDispatchSafely(adapter)
+    }
 
+    private fun enableForegroundDispatchSafely(adapter: NfcAdapter) {
         val intent = Intent(context, this.activity.javaClass).apply {
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
 
         val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            PendingIntent.FLAG_MUTABLE
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
@@ -143,28 +160,29 @@ class NFCPlugin : Plugin() {
                 activityOptionsBundle
             )
 
-        val intentFilter: Array<IntentFilter> =
-            arrayOf(
-                IntentFilter(ACTION_NDEF_DISCOVERED).apply {
-                    try {
-                        addDataType("text/plain")
-                    } catch (e: IntentFilter.MalformedMimeTypeException) {
-                        throw RuntimeException("failed", e)
-                    }
-                },
-                IntentFilter(ACTION_TECH_DISCOVERED),
-                IntentFilter(ACTION_TAG_DISCOVERED)
-            )
-
-        getDefaultAdapter(this.activity).enableForegroundDispatch(
-            this.activity,
-            pendingIntent,
-            intentFilter,
-            techListsArray
-        )
+        // Use null filters/tech lists so foreground dispatch captures any NFC tag type while app is in foreground.
+        // This avoids vendor/OS quirks where restrictive filters prevent intent delivery on older Android versions.
+        activity.runOnUiThread {
+            try {
+                adapter.enableForegroundDispatch(
+                    this.activity,
+                    pendingIntent,
+                    null,
+                    null
+                )
+            } catch (e: SecurityException) {
+                Log.e("NFC", "Missing NFC permission for foreground dispatch: ${e.message}", e)
+                notifyListeners("nfcError", JSObject().put("error", "Missing android.permission.NFC in AndroidManifest.xml"))
+            } catch (e: IllegalStateException) {
+                Log.e("NFC", "enableForegroundDispatch failed because activity is not resumed: ${e.message}", e)
+                notifyListeners("nfcError", JSObject().put("error", "NFC foreground dispatch unavailable: activity not resumed"))
+            } catch (e: Exception) {
+                Log.e("NFC", "enableForegroundDispatch failed: ${e.message}", e)
+                notifyListeners("nfcError", JSObject().put("error", "Failed to enable NFC foreground dispatch: ${e.message}"))
+            }
+        }
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun handleWriteTag(intent: Intent) {
         val records = recordsBuffer?.toList<JSONObject>()
         if(records != null) {
@@ -232,7 +250,7 @@ class NFCPlugin : Plugin() {
                 }
 
                 val ndefMessage = NdefMessage(ndefRecords.toTypedArray())
-                val tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
+                val tag = getParcelableExtraCompat(intent, NfcAdapter.EXTRA_TAG, Tag::class.java)
                 var ndef = Ndef.get(tag)
 
                 if (ndef == null) {
@@ -339,20 +357,16 @@ class NFCPlugin : Plugin() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun handleReadTag(intent: Intent) {
         val jsResponse = JSObject()
         val ndefMessages = JSArray()
 
         // Get tag information regardless of NDEF content
-        val tag: Tag? = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
+        val tag: Tag? = getParcelableExtraCompat(intent, NfcAdapter.EXTRA_TAG, Tag::class.java)
         val tagInfo = tag?.let { extractTagInfo(it) }
 
         // Try to obtain raw NDEF messages first (ACTION_NDEF_DISCOVERED path)
-        val receivedMessages = intent.getParcelableArrayExtra(
-            EXTRA_NDEF_MESSAGES,
-            NdefMessage::class.java
-        )
+        val receivedMessages = getParcelableArrayExtraCompat(intent, EXTRA_NDEF_MESSAGES, NdefMessage::class.java)
 
         if (receivedMessages != null && receivedMessages.isNotEmpty()) {
             // Standard NDEF-discovered path
@@ -402,6 +416,34 @@ class NFCPlugin : Plugin() {
             jsResponse.put("tagInfo", tagInfo)
         }
         this.notifyListeners("nfcTag", jsResponse)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun <T : Parcelable> getParcelableExtraCompat(
+        intent: Intent,
+        key: String,
+        clazz: Class<T>
+    ): T? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(key, clazz)
+        } else {
+            intent.getParcelableExtra(key) as? T
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun <T : Parcelable> getParcelableArrayExtraCompat(
+        intent: Intent,
+        key: String,
+        clazz: Class<T>
+    ): List<T>? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableArrayExtra(key, clazz)?.toList()
+        } else {
+            intent
+                .getParcelableArrayExtra(key)
+                ?.mapNotNull { clazz.cast(it) }
+        }
     }
 
     private fun extractTagInfo(tag: Tag): JSObject {
