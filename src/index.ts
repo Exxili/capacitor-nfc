@@ -1,4 +1,4 @@
-import { registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 import type {
   NDEFMessagesTransformable,
@@ -17,9 +17,94 @@ const NFCPlug = registerPlugin<NFCPluginBasic>('NFC', {
   web: () => import('./web.js').then((m) => new m.NFCWeb()),
 });
 export * from './definitions.js';
+
+const LISTENER_ATTACH_RETRY_MS = 500;
+
+const isNativeRuntime = (): boolean => Capacitor.getPlatform() !== 'web';
+
+const createRetryingNativeListener = (
+  eventName: 'nfcTag' | 'nfcWriteSuccess' | 'nfcError',
+  listener: (data: any) => void,
+): (() => void) => {
+  let removed = false;
+  let attaching = false;
+  let handle: any;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const attach = () => {
+    if (removed || attaching || handle) return;
+    attaching = true;
+    try {
+      const result = (NFCPlug as any).addListener(eventName, listener);
+      if (result && typeof result.then === 'function') {
+        result
+          .then((h: any) => {
+            attaching = false;
+            handle = h ?? result;
+          })
+          .catch(() => {
+            attaching = false;
+            if (removed || !isNativeRuntime()) return;
+            retryTimer = setTimeout(attach, LISTENER_ATTACH_RETRY_MS);
+          });
+      } else {
+        attaching = false;
+        handle = result;
+      }
+    } catch {
+      attaching = false;
+      if (removed || !isNativeRuntime()) return;
+      retryTimer = setTimeout(attach, LISTENER_ATTACH_RETRY_MS);
+    }
+  };
+
+  attach();
+
+  return () => {
+    removed = true;
+    if (retryTimer) clearTimeout(retryTimer);
+    try {
+      handle?.remove?.();
+    } catch {
+      /* empty */
+    }
+  };
+};
+
+let stopNativeTagBridge: (() => void) | undefined;
+let nativeTagBridgeAttached = false;
+
+const dispatchNfcTag = (data: any): void => {
+  const wrappedData: NDEFMessagesTransformable = {
+    base64() {
+      return mapPayloadTo('b64', data);
+    },
+    string() {
+      return mapPayloadTo('string', data);
+    },
+    uint8Array() {
+      return mapPayloadTo('uint8Array', data);
+    },
+    numberArray() {
+      return mapPayloadTo('numberArray', data);
+    },
+  };
+
+  for (const listener of NFC.wrapperListeners) {
+    listener(wrappedData);
+  }
+};
+
+const ensureNativeTagBridge = (): void => {
+  if (nativeTagBridgeAttached) return;
+  nativeTagBridgeAttached = true;
+  stopNativeTagBridge = createRetryingNativeListener('nfcTag', dispatchNfcTag);
+};
+
 export const NFC: NFCPlugin = {
   isSupported: NFCPlug.isSupported.bind(NFCPlug),
   startScan: (options?: StartScanOptions) => {
+    ensureNativeTagBridge();
     const normalizedOptions: Record<string, unknown> = {};
     if (options) {
       for (const [key, value] of Object.entries(options)) {
@@ -37,6 +122,7 @@ export const NFC: NFCPlugin = {
     }),
   cancelWriteAndroid: NFCPlug.cancelWriteAndroid.bind(NFCPlug),
   onRead: (func: TagResultListenerFunc) => {
+    ensureNativeTagBridge();
     NFC.wrapperListeners.push(func);
     // Return unsubscribe function
     return () => {
@@ -44,29 +130,18 @@ export const NFC: NFCPlugin = {
     };
   },
   onWrite: (func: () => void) => {
-    let handle: any;
-    NFCPlug.addListener(`nfcWriteSuccess`, func).then((h: any) => (handle = h));
-    return () => {
-      try {
-        handle?.remove?.();
-      } catch {
-        /* empty */
-      }
-    };
+    return createRetryingNativeListener('nfcWriteSuccess', func);
   },
   onError: (errorFn: (error: NFCError) => void) => {
-    let handle: any;
-    NFCPlug.addListener(`nfcError`, errorFn).then((h: any) => (handle = h));
-    return () => {
-      try {
-        handle?.remove?.();
-      } catch {
-        /* empty */
-      }
-    };
+    return createRetryingNativeListener('nfcError', errorFn as (data: any) => void);
   },
   removeAllListeners: (eventName: 'nfcTag' | 'nfcError') => {
     NFC.wrapperListeners = [];
+    if (eventName === 'nfcTag') {
+      stopNativeTagBridge?.();
+      stopNativeTagBridge = undefined;
+      nativeTagBridgeAttached = false;
+    }
     return NFCPlug.removeAllListeners(eventName);
   },
   wrapperListeners: [],
@@ -258,24 +333,3 @@ const mapPayloadTo = <T extends DecodeSpecifier>(type: T, data: NDEFMessages): d
     tagInfo: data.tagInfo, // Include tag information
   } as decodedType<T>;
 };
-
-NFCPlug.addListener(`nfcTag`, (data: any) => {
-  const wrappedData: NDEFMessagesTransformable = {
-    base64() {
-      return mapPayloadTo('b64', data);
-    },
-    string() {
-      return mapPayloadTo('string', data);
-    },
-    uint8Array() {
-      return mapPayloadTo('uint8Array', data);
-    },
-    numberArray() {
-      return mapPayloadTo('numberArray', data);
-    },
-  };
-
-  for (const listener of NFC.wrapperListeners) {
-    listener(wrappedData);
-  }
-});
