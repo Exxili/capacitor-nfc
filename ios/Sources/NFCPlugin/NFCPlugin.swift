@@ -11,7 +11,8 @@ public class NFCPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "cancelWriteAndroid", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startScan", returnType: CAPPluginReturnPromise),
     CAPPluginMethod(name: "cancelScan", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "writeNDEF", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "writeNDEF", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getStatus", returnType: CAPPluginReturnPromise)
     ]
 
     private let reader = NFCReader()
