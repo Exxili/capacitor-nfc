@@ -123,6 +123,7 @@ export const NFC: NFCPlugin = {
 
     await NFCPlug.writeNDEF(ndefMessage);
   },
+  getStatus: NFCPlug.getStatus.bind(NFCPlug),
 };
 
 // ----- Payload transformation helpers -----

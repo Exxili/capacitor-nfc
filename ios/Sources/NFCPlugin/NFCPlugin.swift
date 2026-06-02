@@ -17,8 +17,12 @@ public class NFCPlugin: CAPPlugin, CAPBridgedPlugin {
     private let reader = NFCReader()
     private let writer = NFCWriter()
 
+    private func isNfcAvailable() -> Bool {
+        NFCNDEFReaderSession.readingAvailable
+    }
+
     @objc func isSupported(_ call: CAPPluginCall) {
-        call.resolve(["supported": NFCNDEFReaderSession.readingAvailable])
+        call.resolve(["supported": isNfcAvailable()])
     }
 
     @objc func cancelWriteAndroid(_ call: CAPPluginCall) {
@@ -165,5 +169,12 @@ public class NFCPlugin: CAPPlugin, CAPBridgedPlugin {
 
         writer.startWriting(message: ndefMessage)
         call.resolve()
+    }
+
+    @objc func getStatus(_ call: CAPPluginCall) {
+        let status = isNfcAvailable() ? "ENABLED" : "NOT_SUPPORTED"
+        call.resolve([
+            "status": status
+        ])
     }
 }

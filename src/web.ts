@@ -1,6 +1,6 @@
 import { WebPlugin } from '@capacitor/core';
 
-import type { StartScanOptions } from './definitions.js';
+import type { NfcStatus, StartScanOptions } from './definitions.js';
 
 export class NFCWeb extends WebPlugin {
   async isSupported(): Promise<{ supported: boolean }> {
@@ -21,5 +21,9 @@ export class NFCWeb extends WebPlugin {
 
   async writeNDEF(_options?: any): Promise<void> {
     throw new Error('NFC is not supported on web');
+  }
+
+  async getStatus(): Promise<{ status: NfcStatus }> {
+    return { status: 'NOT_SUPPORTED' };
   }
 }
