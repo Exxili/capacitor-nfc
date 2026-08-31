@@ -26,7 +26,6 @@ import android.nfc.tech.NfcV
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import androidx.annotation.RequiresApi
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -57,7 +56,6 @@ class NFCPlugin : Plugin() {
         NfcV::class.java.name
     ))
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     public override fun handleOnNewIntent(intent: Intent?) {
         super.handleOnNewIntent(intent)
 
@@ -164,7 +162,6 @@ class NFCPlugin : Plugin() {
         )
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun handleWriteTag(intent: Intent) {
         val records = recordsBuffer?.toList<JSONObject>()
         if(records != null) {
@@ -232,7 +229,7 @@ class NFCPlugin : Plugin() {
                 }
 
                 val ndefMessage = NdefMessage(ndefRecords.toTypedArray())
-                val tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
+                val tag = getTagFromIntent(intent)
                 var ndef = Ndef.get(tag)
 
                 if (ndef == null) {
@@ -339,20 +336,16 @@ class NFCPlugin : Plugin() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun handleReadTag(intent: Intent) {
         val jsResponse = JSObject()
         val ndefMessages = JSArray()
 
         // Get tag information regardless of NDEF content
-        val tag: Tag? = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
+        val tag: Tag? = getTagFromIntent(intent)
         val tagInfo = tag?.let { extractTagInfo(it) }
 
         // Try to obtain raw NDEF messages first (ACTION_NDEF_DISCOVERED path)
-        val receivedMessages = intent.getParcelableArrayExtra(
-            EXTRA_NDEF_MESSAGES,
-            NdefMessage::class.java
-        )
+        val receivedMessages = getNdefMessagesFromIntent(intent)
 
         if (receivedMessages != null && receivedMessages.isNotEmpty()) {
             // Standard NDEF-discovered path
@@ -447,6 +440,28 @@ class NFCPlugin : Plugin() {
         val msg = JSObject()
         msg.put("records", ndefRecords)
         return msg
+    }
+
+    // Intent.getParcelableExtra(String, Class) and getParcelableArrayExtra(String, Class)
+    // only exist since API 33 (Android 13). Calling them on older devices throws
+    // NoSuchMethodError and crashes the app, so fall back to the legacy overloads.
+    private fun getTagFromIntent(intent: Intent): Tag? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(NfcAdapter.EXTRA_TAG)
+        }
+    }
+
+    private fun getNdefMessagesFromIntent(intent: Intent): Array<NdefMessage>? {
+        val raw = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableArrayExtra(EXTRA_NDEF_MESSAGES, NdefMessage::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableArrayExtra(EXTRA_NDEF_MESSAGES)
+        } ?: return null
+        return raw.mapNotNull { it as? NdefMessage }.toTypedArray()
     }
 
     private fun byteArrayToHexString(inarray: ByteArray): String {
