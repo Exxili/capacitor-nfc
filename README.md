@@ -7,6 +7,8 @@ A Capacitor plugin for reading and writing NFC tags on iOS and Android devices. 
 
 **Note**: NFC functionality is only available on compatible iOS devices running iOS 13.0 or later.
 
+This project is maintained on a best-effort basis. No response, review, or release timeframe is guaranteed
+
 ## Table of Contents
 
 - [Capacitor NFC Plugin (@exxili/capacitor-nfc)](#capacitor-nfc-plugin-exxilicapacitor-nfc)
