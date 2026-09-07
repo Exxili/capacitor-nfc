@@ -4,6 +4,7 @@ A Capacitor plugin for reading and writing NFC tags on iOS and Android devices. 
 
 - Read NDEF messages from NFC tags.
 - Write NDEF messages to NFC tags.
+- Check whether NFC is enabled, disabled, or unsupported.
 
 **Note**: NFC functionality is only available on compatible iOS devices running iOS 13.0 or later.
 
@@ -24,6 +25,7 @@ This project is maintained on a best-effort basis. No response, review, or relea
   - [API](#api)
     - [Methods](#methods)
       - [`isSupported()`](#issupported)
+      - [`getStatus()`](#getstatus)
       - [`startScan()`](#startscan)
       - [`cancelScan()`](#cancelscan)
       - [`writeNDEF(options: NDEFWriteOptions<T extends string | number[] | Uint8Array = string>)`](#writendefoptions-ndefwriteoptionst-extends-string--number--uint8array--string)
@@ -225,6 +227,40 @@ NFC.onError((error: NFCError) => {
 Returns if NFC is supported on the scanning device.
 
 **Returns**: `Promise<{ supported: boolean }>`
+
+#### `getStatus()`
+
+Available since **0.0.14**. Returns the current NFC status without starting a scan or changing device settings. Use this when your UI needs to distinguish between unsupported NFC and NFC that needs to be enabled on Android.
+
+**Returns**: `Promise<{ status: NfcStatus }>`
+
+`NfcStatus` is an exported type with these values:
+
+| Status | Meaning |
+| --- | --- |
+| `ENABLED` | NFC is supported and enabled on Android, or NFC tag reading is available on iOS. |
+| `DISABLED` | NFC is supported but currently switched off. Android only. |
+| `NOT_SUPPORTED` | NFC is unavailable on the device. Always returned on web. |
+
+iOS returns either `ENABLED` or `NOT_SUPPORTED`. The result is a snapshot; call `getStatus()` again after the user returns from device settings to refresh your UI.
+
+```typescript
+import { NFC } from '@exxili/capacitor-nfc';
+
+const { status } = await NFC.getStatus();
+
+switch (status) {
+  case 'ENABLED':
+    console.log('NFC is available');
+    break;
+  case 'DISABLED':
+    console.log('Please enable NFC in your device settings');
+    break;
+  case 'NOT_SUPPORTED':
+    console.log('NFC is not supported on this device');
+    break;
+}
+```
 
 #### `startScan()`
 
