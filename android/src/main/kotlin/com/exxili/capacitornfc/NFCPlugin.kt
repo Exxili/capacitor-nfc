@@ -107,6 +107,19 @@ class NFCPlugin : Plugin() {
         call.resolve()
     }
 
+    @PluginMethod
+    fun getStatus(call: PluginCall) {
+        val adapter = NfcAdapter.getDefaultAdapter(this.activity)
+        val ret = JSObject()
+        val status = when {
+            adapter == null -> "NOT_SUPPORTED"
+            adapter.isEnabled -> "ENABLED"
+            else -> "DISABLED"
+        }
+        ret.put("status", status)
+        call.resolve(ret)
+    }
+
     override fun handleOnPause() {
         super.handleOnPause()
         getDefaultAdapter(this.activity)?.disableForegroundDispatch(this.activity)
@@ -406,18 +419,18 @@ class NFCPlugin : Plugin() {
 
     private fun extractTagInfo(tag: Tag): JSObject {
         val tagInfo = JSObject()
-        
+
         // Always include UID
         val uid = byteArrayToHexString(tag.id)
         tagInfo.put("uid", uid)
-        
+
         // Include technology types
         val techTypes = JSArray()
         for (tech in tag.techList) {
             techTypes.put(tech)
         }
         tagInfo.put("techTypes", techTypes)
-        
+
         // Try to get NDEF-specific information
         val ndef = Ndef.get(tag)
         if (ndef != null) {
@@ -432,7 +445,7 @@ class NFCPlugin : Plugin() {
                 try { ndef.close() } catch (_: Exception) {}
             }
         }
-        
+
         return tagInfo
     }
 

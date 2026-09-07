@@ -3,6 +3,14 @@ import type { PluginListenerHandle } from '@capacitor/core';
 // Payload from a new NFC scan is a base64 encoded string
 export type PayloadType = string | number[] | Uint8Array;
 
+/**
+ * NFC status values.
+ * - "ENABLED" means NFC is available and enabled on the device.
+ * - "DISABLED" means NFC is available but currently disabled (android only).
+ * - "NOT_SUPPORTED" means NFC is not available on this device.
+ */
+export type NfcStatus = 'ENABLED' | 'DISABLED' | 'NOT_SUPPORTED';
+
 export interface StartScanOptions {
   /**
    * Select the native reader strategy.
@@ -83,6 +91,11 @@ export interface NFCPluginBasic {
    * @param eventName The name of the event.
    */
   removeAllListeners(eventName: 'nfcTag' | 'nfcError'): Promise<void>;
+
+  /**
+   * Gets the current NFC status on the device.
+   */
+  getStatus(): Promise<{ status: NfcStatus }>;
 }
 
 export interface NDEFMessages<T extends PayloadType = string> {
