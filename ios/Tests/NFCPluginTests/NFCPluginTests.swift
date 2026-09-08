@@ -12,4 +12,24 @@ class NFCTests: XCTestCase {
 
         XCTAssertEqual(value, result)
     }
+
+    func testEmptyNDEFReadErrorIsClassifiedAsEmptyTagResult() {
+        let error = NSError(
+            domain: "com.apple.NFCError",
+            code: 0,
+            userInfo: [NSLocalizedDescriptionKey: "NDEF tag does not contain any NDEF message"]
+        )
+
+        XCTAssertTrue(NFCReader.isEmptyNDEFMessageReadError(error))
+    }
+
+    func testNonEmptyNDEFReadErrorIsNotClassifiedAsEmptyTagResult() {
+        let error = NSError(
+            domain: "com.apple.NFCError",
+            code: 0,
+            userInfo: [NSLocalizedDescriptionKey: "Failed to read NDEF message"]
+        )
+
+        XCTAssertFalse(NFCReader.isEmptyNDEFMessageReadError(error))
+    }
 }

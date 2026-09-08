@@ -43,6 +43,11 @@ import CoreNFC
     public var onNDEFMessageReceived: (([NFCNDEFMessage], [String: Any]?) -> Void)?
     public var onError: ((Error) -> Void)?
 
+    static func isEmptyNDEFMessageReadError(_ error: Error) -> Bool {
+        let description = error.localizedDescription.lowercased()
+        return description.contains("ndef tag does not contain any ndef message")
+    }
+
     @objc public func setPreferredReaderMode(_ rawMode: String?) {
         guard let rawMode = rawMode?.lowercased() else { return }
         switch rawMode {
@@ -273,6 +278,12 @@ import CoreNFC
                 }
                 tag.readNDEF { message, readError in
                     if let readError = readError {
+                        if Self.isEmptyNDEFMessageReadError(readError) {
+                            session.alertMessage = "Tag detected but no NDEF message found."
+                            session.invalidate()
+                            self.onNDEFMessageReceived?([], nil)
+                            return
+                        }
                         session.invalidate(errorMessage: "Failed to read NDEF message.")
                         self.onError?(readError)
                         return
@@ -400,6 +411,12 @@ import CoreNFC
 
             miFareTag.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
                 if let error = error {
+                    if Self.isEmptyNDEFMessageReadError(error) {
+                        session.alertMessage = "Tag detected but no NDEF message found."
+                        session.invalidate()
+                        self.onNDEFMessageReceived?([], updatedTagInfo)
+                        return
+                    }
                     session.invalidate(errorMessage: "Failed to read NDEF from tag.")
                     self.onError?(error)
                     return
@@ -446,6 +463,12 @@ import CoreNFC
 
             feliCaTag.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
                 if let error = error {
+                    if Self.isEmptyNDEFMessageReadError(error) {
+                        session.alertMessage = "Tag detected but no NDEF message found."
+                        session.invalidate()
+                        self.onNDEFMessageReceived?([], updatedTagInfo)
+                        return
+                    }
                     session.invalidate(errorMessage: "Failed to read NDEF from tag.")
                     self.onError?(error)
                     return
@@ -485,6 +508,12 @@ import CoreNFC
 
             iso15693Tag.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
                 if let error = error {
+                    if Self.isEmptyNDEFMessageReadError(error) {
+                        session.alertMessage = "Tag detected but no NDEF message found."
+                        session.invalidate()
+                        self.onNDEFMessageReceived?([], updatedTagInfo)
+                        return
+                    }
                     session.invalidate(errorMessage: "Failed to read NDEF from tag.")
                     self.onError?(error)
                     return
