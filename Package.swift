@@ -2,15 +2,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "CapacitorNfc",
+    name: "ExxiliCapacitorNfc",
     platforms: [.iOS(.v13)],
     products: [
         .library(
-            name: "CapacitorNfc",
+            name: "ExxiliCapacitorNfc",
             targets: ["NFCPlugin"])
     ],
     dependencies: [
-        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", branch: "main")
+        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", "6.0.0"..<"9.0.0")
     ],
     targets: [
         .target(
@@ -19,10 +19,6 @@ let package = Package(
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm")
             ],
-            path: "ios/Sources/NFCPlugin"),
-        .testTarget(
-            name: "NFCPluginTests",
-            dependencies: ["NFCPlugin"],
-            path: "ios/Tests/NFCPluginTests")
+            path: "ios/Sources/NFCPlugin")
     ]
 )
