@@ -39,6 +39,9 @@ import CoreNFC
     private var autoRestartWorkItem: DispatchWorkItem?
     private var entitlementFailureDetected = false
     private var lastFallbackSignature: (mode: ReaderMode, reason: String?)?
+    /// Whether the current tag reader session has detected a tag. From then on the app receives either the tag or an
+    /// error, and the reader invalidates the session itself, so its invalidation is no cancellation by the user.
+    private var tagDetectedInSession = false
 
     public var onNDEFMessageReceived: (([NFCNDEFMessage], [String: Any]?) -> Void)?
     public var onError: ((Error) -> Void)?
@@ -101,7 +104,11 @@ import CoreNFC
     public func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
         print("NFC reader session error: \(error.localizedDescription)")
         lastFallbackSignature = nil
-        readerSession = nil
+        // cancelScanning and a replacing session release the previous session before its invalidation arrives.
+        let isCurrentSession = session === readerSession
+        if isCurrentSession {
+            readerSession = nil
+        }
         guard let nfcError = error as? NFCReaderError else {
             onError?(error)
             return
@@ -112,6 +119,12 @@ import CoreNFC
         }
 
         if nfcError.code == .readerSessionInvalidationErrorUserCanceled {
+            // Only a current session that is still waiting for a tag was closed by the user ("Cancel" on the scan
+            // sheet). A session cancelled by the app, replaced, or ended by the reader after a tag must not fail the
+            // next scan.
+            if isCurrentSession && !tagDetectedInSession {
+                onError?(error)
+            }
             return
         }
 
@@ -147,6 +160,7 @@ import CoreNFC
             }
             session.alertMessage = "Hold your iPhone near the NFC tag" + self.readerMode.alertSuffix
             self.readerSession = session
+            self.tagDetectedInSession = false
             session.begin()
         }
     }
@@ -227,9 +241,17 @@ import CoreNFC
     // MARK: - NFCNDEFReaderSessionDelegate
     public func readerSession(_ session: NFCNDEFReaderSession, didInvalidateWithError error: Error) {
         print("NDEF reader session error: \(error.localizedDescription)")
-        if session === ndefReaderSession {
+        let isCurrentSession = session === ndefReaderSession
+        if isCurrentSession {
             ndefReaderSession = nil
             lastFallbackSignature = nil
+        }
+        // A session cancelled by the app or replaced by another one must not fail the next scan. The current session
+        // is reported even after a tag: a tag without NDEF content ends it without any other event.
+        if let nfcError = error as? NFCReaderError,
+           nfcError.code == .readerSessionInvalidationErrorUserCanceled,
+           !isCurrentSession {
+            return
         }
         onError?(error)
     }
@@ -313,6 +335,9 @@ import CoreNFC
         guard let tag = tags.first else {
             session.invalidate(errorMessage: "No tag found.")
             return
+        }
+        if session === readerSession {
+            tagDetectedInSession = true
         }
         session.connect(to: tag) { (error: Error?) in
             if let error = error {
