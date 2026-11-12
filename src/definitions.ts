@@ -26,6 +26,21 @@ export interface StartScanOptions {
   forceFull?: boolean;
   forceCompat?: boolean;
   forceNDEF?: boolean;
+  /**
+   * iOS only: texts shown below the system title of the scan sheet. A missing text keeps the English default.
+   */
+  messages?: ScanSheetMessages;
+}
+
+export interface ScanSheetMessages {
+  /** Shown while the sheet waits for a tag. */
+  prompt?: string;
+  /** Shown after a tag was read. */
+  success?: string;
+  /** Shown while more than one tag is in the field. */
+  multipleTags?: string;
+  /** Shown when a tag was detected but could not be read. */
+  readError?: string;
 }
 
 export interface NFCPluginBasic {

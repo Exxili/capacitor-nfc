@@ -39,9 +39,48 @@ import CoreNFC
     private var autoRestartWorkItem: DispatchWorkItem?
     private var entitlementFailureDetected = false
     private var lastFallbackSignature: (mode: ReaderMode, reason: String?)?
+    /// Texts the app shows below the system title of the scan sheet, set for every scan. A missing text keeps the
+    /// English default of the plugin.
+    private var promptText: String?
+    private var successText: String?
+    private var multipleTagsText: String?
+    private var readErrorText: String?
 
     public var onNDEFMessageReceived: (([NFCNDEFMessage], [String: Any]?) -> Void)?
     public var onError: ((Error) -> Void)?
+
+    /// Replaces the texts of the scan sheet for the next scan. Empty or missing texts keep the plugin defaults.
+    public func setMessages(prompt: String?, success: String?, multipleTags: String?, readError: String?) {
+        promptText = Self.nonEmpty(prompt)
+        successText = Self.nonEmpty(success)
+        multipleTagsText = Self.nonEmpty(multipleTags)
+        readErrorText = Self.nonEmpty(readError)
+    }
+
+    private static func nonEmpty(_ text: String?) -> String? {
+        guard let text = text, !text.isEmpty else { return nil }
+        return text
+    }
+
+    /// Text shown while the sheet waits for a tag. The app text has no mode suffix, which only helps when debugging.
+    private func promptMessage() -> String {
+        return promptText ?? ("Hold your iPhone near the NFC tag" + readerMode.alertSuffix)
+    }
+
+    /// Text shown after a tag was read and delivered to the app.
+    private func successMessage(_ defaultText: String) -> String {
+        return successText ?? defaultText
+    }
+
+    /// Text shown while more than one tag is in the field.
+    private func multipleTagsMessage(_ defaultText: String) -> String {
+        return multipleTagsText ?? defaultText
+    }
+
+    /// Text shown when a tag was detected but could not be read. The app receives the detailed error separately.
+    private func readErrorMessage(_ defaultText: String) -> String {
+        return readErrorText ?? defaultText
+    }
 
     @objc public func setPreferredReaderMode(_ rawMode: String?) {
         guard let rawMode = rawMode?.lowercased() else { return }
@@ -145,7 +184,7 @@ import CoreNFC
                 print("[NFC] Failed to create NFCTagReaderSession (nil).")
                 return
             }
-            session.alertMessage = "Hold your iPhone near the NFC tag" + self.readerMode.alertSuffix
+            session.alertMessage = self.promptMessage()
             self.readerSession = session
             session.begin()
         }
@@ -156,7 +195,7 @@ import CoreNFC
         DispatchQueue.main.async {
             if self.ndefReaderSession != nil { return }
             let session = NFCNDEFReaderSession(delegate: self, queue: nil, invalidateAfterFirstRead: false)
-            session.alertMessage = "Hold your iPhone near the NFC tag. (NDEF mode)"
+            session.alertMessage = self.promptText ?? "Hold your iPhone near the NFC tag. (NDEF mode)"
             self.ndefReaderSession = session
             session.begin()
         }
@@ -248,7 +287,7 @@ import CoreNFC
         // Mirror writer logic for reading first NDEF tag
         if tags.count > 1 {
             let retryInterval = DispatchTimeInterval.milliseconds(500)
-            session.alertMessage = "More than one tag detected. Please try again."
+            session.alertMessage = self.multipleTagsMessage("More than one tag detected. Please try again.")
             DispatchQueue.global().asyncAfter(deadline: .now() + retryInterval) {
                 session.restartPolling()
             }
@@ -257,32 +296,32 @@ import CoreNFC
         guard let tag = tags.first else { return }
         session.connect(to: tag) { connectError in
             if let connectError = connectError {
-                session.invalidate(errorMessage: "Unable to connect to tag.")
+                session.invalidate(errorMessage: self.readErrorMessage("Unable to connect to tag."))
                 self.onError?(connectError)
                 return
             }
             tag.queryNDEFStatus { status, _, statusError in
                 if let statusError = statusError {
-                    session.invalidate(errorMessage: "Unable to query the NDEF status of tag.")
+                    session.invalidate(errorMessage: self.readErrorMessage("Unable to query the NDEF status of tag."))
                     self.onError?(statusError)
                     return
                 }
                 guard status != .notSupported else {
-                    session.invalidate(errorMessage: "Tag is not NDEF compliant.")
+                    session.invalidate(errorMessage: self.readErrorMessage("Tag is not NDEF compliant."))
                     return
                 }
                 tag.readNDEF { message, readError in
                     if let readError = readError {
-                        session.invalidate(errorMessage: "Failed to read NDEF message.")
+                        session.invalidate(errorMessage: self.readErrorMessage("Failed to read NDEF message."))
                         self.onError?(readError)
                         return
                     }
                     if let message = message {
-                        session.alertMessage = "Found 1 NDEF message."
+                        session.alertMessage = self.successMessage("Found 1 NDEF message.")
                         session.invalidate()
                         self.onNDEFMessageReceived?([message], nil)
                     } else {
-                        session.alertMessage = "No NDEF message found."
+                        session.alertMessage = self.successMessage("No NDEF message found.")
                         session.invalidate()
                         self.onNDEFMessageReceived?([], nil)
                     }
@@ -303,7 +342,7 @@ import CoreNFC
     public func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
         if tags.count > 1 {
             let retryInterval = DispatchTimeInterval.milliseconds(500)
-            session.alertMessage = "More than one tag detected. Please remove extra tags and try again."
+            session.alertMessage = self.multipleTagsMessage("More than one tag detected. Please remove extra tags and try again.")
             DispatchQueue.global().asyncAfter(deadline: .now() + retryInterval) {
                 session.restartPolling()
             }
@@ -311,12 +350,12 @@ import CoreNFC
         }
 
         guard let tag = tags.first else {
-            session.invalidate(errorMessage: "No tag found.")
+            session.invalidate(errorMessage: self.readErrorMessage("No tag found."))
             return
         }
         session.connect(to: tag) { (error: Error?) in
             if let error = error {
-                session.invalidate(errorMessage: "Unable to connect to tag.")
+                session.invalidate(errorMessage: self.readErrorMessage("Unable to connect to tag."))
                 self.onError?(error)
                 return
             }
@@ -335,7 +374,7 @@ import CoreNFC
                 self.handleISO15693Tag(iso15693Tag, session: session, tagInfo: tagInfo)
             } else {
                 // Unknown tag type, still return tag info
-                session.alertMessage = "Tag detected but no NDEF message found."
+                session.alertMessage = self.successMessage("Tag detected but no NDEF message found.")
                 session.invalidate()
                 self.onNDEFMessageReceived?([], tagInfo)
             }
@@ -382,13 +421,13 @@ import CoreNFC
     private func handleMiFareTag(_ miFareTag: NFCMiFareTag, session: NFCTagReaderSession, tagInfo: [String: Any]) {
         miFareTag.queryNDEFStatus { (ndefStatus: NFCNDEFStatus, capacity: Int, error: Error?) in
             if let error = error {
-                session.invalidate(errorMessage: "Unable to query NDEF status of tag.")
+                session.invalidate(errorMessage: self.readErrorMessage("Unable to query NDEF status of tag."))
                 self.onError?(error)
                 return
             }
 
             if ndefStatus == .notSupported {
-                session.alertMessage = "Tag detected but no NDEF message found."
+                session.alertMessage = self.successMessage("Tag detected but no NDEF message found.")
                 session.invalidate()
                 self.onNDEFMessageReceived?([], tagInfo)
                 return
@@ -400,17 +439,17 @@ import CoreNFC
 
             miFareTag.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
                 if let error = error {
-                    session.invalidate(errorMessage: "Failed to read NDEF from tag.")
+                    session.invalidate(errorMessage: self.readErrorMessage("Failed to read NDEF from tag."))
                     self.onError?(error)
                     return
                 }
 
                 if let message = message {
-                    session.alertMessage = "Found 1 NDEF message."
+                    session.alertMessage = self.successMessage("Found 1 NDEF message.")
                     session.invalidate()
                     self.onNDEFMessageReceived?([message], updatedTagInfo)
                 } else {
-                    session.alertMessage = "Tag detected but no NDEF message found."
+                    session.alertMessage = self.successMessage("Tag detected but no NDEF message found.")
                     session.invalidate()
                     self.onNDEFMessageReceived?([], updatedTagInfo)
                 }
@@ -420,7 +459,7 @@ import CoreNFC
 
     private func handleISO7816Tag(_ iso7816Tag: NFCISO7816Tag, session: NFCTagReaderSession, tagInfo: [String: Any]) {
         // ISO7816 tags don't typically support NDEF directly
-        session.alertMessage = "Tag detected but no NDEF message found."
+        session.alertMessage = self.successMessage("Tag detected but no NDEF message found.")
         session.invalidate()
         self.onNDEFMessageReceived?([], tagInfo)
     }
@@ -428,13 +467,13 @@ import CoreNFC
     private func handleFeliCaTag(_ feliCaTag: NFCFeliCaTag, session: NFCTagReaderSession, tagInfo: [String: Any]) {
         feliCaTag.queryNDEFStatus { (ndefStatus: NFCNDEFStatus, capacity: Int, error: Error?) in
             if let error = error {
-                session.invalidate(errorMessage: "Unable to query NDEF status of tag.")
+                session.invalidate(errorMessage: self.readErrorMessage("Unable to query NDEF status of tag."))
                 self.onError?(error)
                 return
             }
 
             if ndefStatus == .notSupported {
-                session.alertMessage = "Tag detected but no NDEF message found."
+                session.alertMessage = self.successMessage("Tag detected but no NDEF message found.")
                 session.invalidate()
                 self.onNDEFMessageReceived?([], tagInfo)
                 return
@@ -446,17 +485,17 @@ import CoreNFC
 
             feliCaTag.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
                 if let error = error {
-                    session.invalidate(errorMessage: "Failed to read NDEF from tag.")
+                    session.invalidate(errorMessage: self.readErrorMessage("Failed to read NDEF from tag."))
                     self.onError?(error)
                     return
                 }
 
                 if let message = message {
-                    session.alertMessage = "Found 1 NDEF message."
+                    session.alertMessage = self.successMessage("Found 1 NDEF message.")
                     session.invalidate()
                     self.onNDEFMessageReceived?([message], updatedTagInfo)
                 } else {
-                    session.alertMessage = "Tag detected but no NDEF message found."
+                    session.alertMessage = self.successMessage("Tag detected but no NDEF message found.")
                     session.invalidate()
                     self.onNDEFMessageReceived?([], updatedTagInfo)
                 }
@@ -467,13 +506,13 @@ import CoreNFC
     private func handleISO15693Tag(_ iso15693Tag: NFCISO15693Tag, session: NFCTagReaderSession, tagInfo: [String: Any]) {
         iso15693Tag.queryNDEFStatus { (ndefStatus: NFCNDEFStatus, capacity: Int, error: Error?) in
             if let error = error {
-                session.invalidate(errorMessage: "Unable to query NDEF status of tag.")
+                session.invalidate(errorMessage: self.readErrorMessage("Unable to query NDEF status of tag."))
                 self.onError?(error)
                 return
             }
 
             if ndefStatus == .notSupported {
-                session.alertMessage = "Tag detected but no NDEF message found."
+                session.alertMessage = self.successMessage("Tag detected but no NDEF message found.")
                 session.invalidate()
                 self.onNDEFMessageReceived?([], tagInfo)
                 return
@@ -485,17 +524,17 @@ import CoreNFC
 
             iso15693Tag.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
                 if let error = error {
-                    session.invalidate(errorMessage: "Failed to read NDEF from tag.")
+                    session.invalidate(errorMessage: self.readErrorMessage("Failed to read NDEF from tag."))
                     self.onError?(error)
                     return
                 }
 
                 if let message = message {
-                    session.alertMessage = "Found 1 NDEF message."
+                    session.alertMessage = self.successMessage("Found 1 NDEF message.")
                     session.invalidate()
                     self.onNDEFMessageReceived?([message], updatedTagInfo)
                 } else {
-                    session.alertMessage = "Tag detected but no NDEF message found."
+                    session.alertMessage = self.successMessage("Tag detected but no NDEF message found.")
                     session.invalidate()
                     self.onNDEFMessageReceived?([], updatedTagInfo)
                 }

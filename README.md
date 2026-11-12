@@ -289,6 +289,19 @@ NFC.startScan({ mode: 'auto' })
   });
 ```
 
+On iOS you can replace the texts shown below the system title of the scan sheet, for example to localize them. Each text is optional; a missing or empty text keeps the English default. Android ignores this option.
+
+```typescript
+NFC.startScan({
+  messages: {
+    prompt: 'Halten Sie Ihr iPhone an den NFC-Tag.', // while waiting for a tag
+    success: 'Tag gelesen.', // after a tag was read
+    multipleTags: 'Mehrere Tags erkannt. Bitte nur einen Tag verwenden.', // more than one tag in the field
+    readError: 'Tag konnte nicht gelesen werden.', // tag detected but not readable
+  },
+});
+```
+
 #### `cancelScan()`
 
 Immediately invalidates the active iOS CoreNFC reader session (if any). Useful when you want to abort a scan early instead of waiting for the user to cancel or for a tag detection timeout.
@@ -511,6 +524,17 @@ interface StartScanOptions {
   forceFull?: boolean;
   forceCompat?: boolean;
   forceNDEF?: boolean;
+  /**
+   * iOS only: texts shown below the system title of the scan sheet. A missing text keeps the English default.
+   */
+  messages?: ScanSheetMessages;
+}
+
+interface ScanSheetMessages {
+  prompt?: string; // shown while the sheet waits for a tag
+  success?: string; // shown after a tag was read
+  multipleTags?: string; // shown while more than one tag is in the field
+  readError?: string; // shown when a tag was detected but could not be read
 }
 ```
 
