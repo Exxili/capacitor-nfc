@@ -277,6 +277,8 @@ You can override the mode explicitly:
 
 Legacy booleans `forceFull`, `forceCompat`, and `forceNDEF` map to the options above for backwards compatibility.
 
+When the user closes the scan sheet with **Cancel** before a tag was detected, an `nfcError` event is emitted (the iOS message is "Session invalidated by user"), so your app can stop waiting for a tag. Sessions ended by `cancelScan()` or replaced by a new `startScan()` do not emit this event.
+
 **Returns**: `Promise<void>`
 
 ```typescript
@@ -295,7 +297,7 @@ Immediately invalidates the active iOS CoreNFC reader session (if any). Useful w
 
 Platform notes:
 
-- iOS: Actively ends the session. Calling `startScan()` again after the returned promise resolves is safe.
+- iOS: Actively ends the session without emitting an `nfcError` event. Calling `startScan()` again after the returned promise resolves is safe.
 - Android: No-op (Android is always passively listening via foreground dispatch; you generally just ignore future events or control UI state).
 
 ```typescript

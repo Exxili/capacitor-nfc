@@ -83,10 +83,10 @@ public class NFCPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         reader.onError = { error in
+            // The reader only reports a cancellation when the user closed a session that was still waiting for a tag.
+            // The app must learn about it, otherwise it keeps waiting for a tag that never arrives.
             if let nfcError = error as? NFCReaderError {
-                if nfcError.code != .readerSessionInvalidationErrorUserCanceled {
-                    self.notifyListeners("nfcError", data: ["error": nfcError.localizedDescription])
-                }
+                self.notifyListeners("nfcError", data: ["error": nfcError.localizedDescription])
             }
         }
 
