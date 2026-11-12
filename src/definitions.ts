@@ -16,7 +16,7 @@ export interface StartScanOptions {
    * Select the native reader strategy.
    * - `auto` (default): attempt advanced tag session first, downgrade automatically on entitlement failures.
    * - `full`: force the advanced tag session (resets any cached fallback state).
-   * - `compat`: force the compatibility tag session (ISO14443-only, avoids advanced entitlements).
+   * - `compat`: force the compatibility tag session (ISO 14443 and ISO 15693 without FeliCa, avoids advanced entitlements).
    * - `ndef`: skip tag session entirely and use the legacy NDEF reader.
    */
   mode?: 'auto' | 'full' | 'compat' | 'ndef';

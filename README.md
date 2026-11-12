@@ -266,13 +266,13 @@ switch (status) {
 
 Starts the NFC scanning session on **_iOS only_**. Android devices are always in reading mode, so setting up the `nfcTag` listener is sufficient to handle tag reads on Android.
 
-The iOS implementation now adapts automatically if the extended CoreNFC entitlements (ISO 7816, ISO 15693, FeliCa) are missing. The plugin first attempts the advanced tag reader so you can access UID/tech info. When iOS reports `Missing required entitlement`, the plugin downgrades to a compatibility mode (ISO 14443 only) and, if necessary, to the classic NDEF reader. A synthetic `nfcTag` event is emitted with `tagInfo.fallback`, `tagInfo.fallbackMode`, and `tagInfo.reason` so your UI can react immediately.
+The iOS implementation now adapts automatically if the extended CoreNFC entitlements (ISO 7816, ISO 15693, FeliCa) are missing. The plugin first attempts the advanced tag reader so you can access UID/tech info. When iOS reports `Missing required entitlement`, the plugin downgrades to a compatibility mode (ISO 14443 and ISO 15693, without FeliCa) and, if necessary, to the classic NDEF reader. A synthetic `nfcTag` event is emitted with `tagInfo.fallback`, `tagInfo.fallbackMode`, and `tagInfo.reason` so your UI can react immediately.
 
 You can override the mode explicitly:
 
 - `mode: 'auto'` (default) – advanced reader with automatic downgrade and caching.
 - `mode: 'full'` – force a fresh attempt at the advanced reader, resetting cached fallback state.
-- `mode: 'compat'` – skip the advanced probe and jump straight to the ISO 14443 compatibility reader.
+- `mode: 'compat'` – skip the advanced probe and jump straight to the compatibility reader (ISO 14443 and ISO 15693, without FeliCa).
 - `mode: 'ndef'` – bypass tag sessions entirely and revert to the legacy NDEF-only reader.
 
 Legacy booleans `forceFull`, `forceCompat`, and `forceNDEF` map to the options above for backwards compatibility.

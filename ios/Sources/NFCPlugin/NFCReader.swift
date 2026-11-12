@@ -123,7 +123,9 @@ import CoreNFC
         case .fullTag:
             beginTagSession(pollingOption: [.iso14443, .iso15693, .iso18092])
         case .limitedTag:
-            beginTagSession(pollingOption: [.iso14443])
+            // Only FeliCa (iso18092) needs additional Info.plist configuration; ISO 15693 tags such as NXP ICODE
+            // access chips can still be read in this mode.
+            beginTagSession(pollingOption: [.iso14443, .iso15693])
         case .ndefFallback:
             beginNDEFFallbackSession()
         }
