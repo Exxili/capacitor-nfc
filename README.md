@@ -85,6 +85,8 @@ In Xcode:
 > ```
 >
 > Replace the sample identifiers with the values required for your tags. Consult Apple's CoreNFC documentation for the complete list of entitlement keys.
+>
+> To read the NDEF message of NFC Forum Type 4 tags (ISO 7816 tags such as YubiKeys), keep `D2760000850101` (the NDEF application) in `com.apple.developer.nfc.readersession.iso7816.select-identifiers`. Without it, iOS does not report these tags as ISO 7816 tags.
 
 ### 2. Add Usage Description
 
