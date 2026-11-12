@@ -41,6 +41,13 @@ public class NFCPlugin: CAPPlugin, CAPBridgedPlugin {
         } else if call.getBool("forceNDEF") == true {
             reader.setPreferredReaderMode("ndef")
         }
+        let messages = call.getObject("messages")
+        reader.setMessages(
+            prompt: messages?["prompt"] as? String,
+            success: messages?["success"] as? String,
+            multipleTags: messages?["multipleTags"] as? String,
+            readError: messages?["readError"] as? String
+        )
         reader.onNDEFMessageReceived = { messages, tagInfo in
             var ndefMessages = [[String: Any]]()
 
