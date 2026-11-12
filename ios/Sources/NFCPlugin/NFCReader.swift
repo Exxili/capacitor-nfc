@@ -419,10 +419,44 @@ import CoreNFC
     }
 
     private func handleISO7816Tag(_ iso7816Tag: NFCISO7816Tag, session: NFCTagReaderSession, tagInfo: [String: Any]) {
-        // ISO7816 tags don't typically support NDEF directly
-        session.alertMessage = "Tag detected but no NDEF message found."
-        session.invalidate()
-        self.onNDEFMessageReceived?([], tagInfo)
+        // NFC Forum Type 4 tags such as YubiKeys are ISO 7816 tags that keep their NDEF message in the NDEF
+        // application (AID D2760000850101). CoreNFC only reports them when the app lists that AID in Info.plist.
+        iso7816Tag.queryNDEFStatus { (ndefStatus: NFCNDEFStatus, capacity: Int, error: Error?) in
+            if let error = error {
+                session.invalidate(errorMessage: "Unable to query NDEF status of tag.")
+                self.onError?(error)
+                return
+            }
+
+            if ndefStatus == .notSupported {
+                session.alertMessage = "Tag detected but no NDEF message found."
+                session.invalidate()
+                self.onNDEFMessageReceived?([], tagInfo)
+                return
+            }
+
+            var updatedTagInfo = tagInfo
+            updatedTagInfo["maxSize"] = capacity
+            updatedTagInfo["isWritable"] = ndefStatus == .readWrite
+
+            iso7816Tag.readNDEF { (message: NFCNDEFMessage?, error: Error?) in
+                if let error = error {
+                    session.invalidate(errorMessage: "Failed to read NDEF from tag.")
+                    self.onError?(error)
+                    return
+                }
+
+                if let message = message {
+                    session.alertMessage = "Found 1 NDEF message."
+                    session.invalidate()
+                    self.onNDEFMessageReceived?([message], updatedTagInfo)
+                } else {
+                    session.alertMessage = "Tag detected but no NDEF message found."
+                    session.invalidate()
+                    self.onNDEFMessageReceived?([], updatedTagInfo)
+                }
+            }
+        }
     }
 
     private func handleFeliCaTag(_ feliCaTag: NFCFeliCaTag, session: NFCTagReaderSession, tagInfo: [String: Any]) {
